@@ -71,6 +71,10 @@ Build the provided CastleAdmin app - a comprehensive bouncy castle delivery mana
 - [x] Demo user created for testing
 - [x] Logo size fixed in sidebar (compact 28px icon)
 - [x] Settings page fixed (added missing Toggle, TextInput, NumInput components and state variables)
+- [x] Integrations tab fully functional with 3 sub-tabs:
+  - Connections: WooCommerce integration with credentials, Setup Instructions, Field Mapping
+  - API Keys: CastleAdmin API documentation, usage guide, key management
+  - Webhooks: Incoming endpoint, setup instructions, outgoing webhook configuration
 
 ## User Personas
 1. **Operations Manager** - Views dashboard, manages bookings, assigns drivers
