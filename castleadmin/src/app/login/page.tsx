@@ -45,14 +45,17 @@ export default function LoginPage() {
     setAuthError(null);
 
     try {
-      await signIn(data.email, data.password);
+      const result = await signIn(data.email, data.password);
+      console.log('Sign in result:', result);
       toast.success('Welcome back!');
-      // Small delay to allow Supabase to write the auth cookie before the
+      // Longer delay to allow Supabase to write the auth cookie before the
       // middleware checks it on the next request.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      window.location.href = '/orders-dashboard';
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Use window.location.replace to ensure no back button issues
+      window.location.replace('/orders-dashboard');
       return;
     } catch (e: any) {
+      console.error('Sign in error:', e);
       setIsLoading(false);
       const rawMsg: string = e?.message || '';
       const isRateLimit =

@@ -45,6 +45,16 @@ function getSessionFromCookies(request: NextRequest): { user: any } | null {
       rawValue = decodeURIComponent(rawValue);
     } catch {}
 
+    // Handle base64- prefix (Supabase SSR format)
+    if (rawValue.startsWith('base64-')) {
+      try {
+        const base64Data = rawValue.slice(7); // Remove 'base64-' prefix
+        rawValue = atob(base64Data);
+      } catch {
+        continue;
+      }
+    }
+
     // Try parsing as JSON (Supabase stores session as JSON in the cookie)
     let accessToken: string | null = null;
     try {
