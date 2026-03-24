@@ -90,11 +90,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     >
       {/* Logo */}
       <div
-        className="flex items-center border-b px-3 py-4 overflow-hidden"
-        style={{ borderColor: 'hsl(var(--border))', minHeight: '65px' }}
+        className="flex items-center border-b px-3 py-3 overflow-hidden"
+        style={{ borderColor: 'hsl(var(--border))', minHeight: '56px' }}
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <AppLogo size={32} />
+          <AppLogo size={28} />
           {!collapsed && (
             <span
               className="font-semibold text-base whitespace-nowrap overflow-hidden transition-all duration-300"

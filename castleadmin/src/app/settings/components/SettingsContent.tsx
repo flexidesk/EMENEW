@@ -271,6 +271,87 @@ const DEFAULT_WC_SETTINGS: WooCommerceSettings = {
   store_url: '', consumer_key: '', consumer_secret: '', is_connected: false,
 };
 
+// ─── Helper Functions ─────────────────────────────────────────────────────────
+
+function sanitizeNulls<T extends object>(data: any, defaults: T): T {
+  const result = { ...defaults };
+  for (const key in defaults) {
+    if (data && data[key] !== null && data[key] !== undefined) {
+      (result as any)[key] = data[key];
+    }
+  }
+  return result;
+}
+
+function generateApiKey(): { full: string; prefix: string; preview: string; hash: string } {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const prefix = 'ca_';
+  let key = '';
+  for (let i = 0; i < 32; i++) {
+    key += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  const full = prefix + key;
+  const preview = prefix + key.slice(0, 4) + '...' + key.slice(-4);
+  // Simple hash for demo - in production use crypto
+  const hash = btoa(full).slice(0, 20);
+  return { full, prefix, preview, hash };
+}
+
+// ─── Helper Components ────────────────────────────────────────────────────────
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-gray-200'}`}
+      style={{ backgroundColor: checked ? 'hsl(var(--primary))' : 'hsl(var(--muted))' }}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
+      />
+    </button>
+  );
+}
+
+function TextInput({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1.5" style={{ color: 'hsl(var(--muted-foreground))' }}>{label}</label>
+      <input
+        type={type}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+        style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+      />
+    </div>
+  );
+}
+
+function NumInput({ label, value, onChange, step = '0.01', min = '0', suffix = '' }: { label: string; value: number; onChange: (v: number) => void; step?: string; min?: string; suffix?: string }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1.5" style={{ color: 'hsl(var(--muted-foreground))' }}>{label}</label>
+      <div className="relative">
+        <input
+          type="number"
+          value={value ?? 0}
+          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          step={step}
+          min={min}
+          className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+          style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+        />
+        {suffix && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>{suffix}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function SettingsContent() {
@@ -318,6 +399,15 @@ export default function SettingsContent() {
   const [wcShowFieldMapping, setWcShowFieldMapping] = useState(false);
   const [wcFieldMapping, setWcFieldMapping] = useState<WooCommerceFieldMapping>(DEFAULT_WC_FIELD_MAPPING);
   const [wcFieldMappingSaving, setWcFieldMappingSaving] = useState(false);
+  const [wcSettings, setWcSettings] = useState<WooCommerceSettings>(DEFAULT_WC_SETTINGS);
+  const [wcShowKey, setWcShowKey] = useState(false);
+  const [wcShowSecret, setWcShowSecret] = useState(false);
+
+  // Delivery zones
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+
+  // Integrations sub-tab
+  const [integrationsSubTab, setIntegrationsSubTab] = useState<'connections' | 'api_keys' | 'webhooks'>('connections');
 
   // ─── Load Data ──────────────────────────────────────────────────────────────
 
