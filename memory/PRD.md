@@ -69,6 +69,8 @@ Build the provided CastleAdmin app - a comprehensive bouncy castle delivery mana
 - [x] Dashboard with real data from Supabase
 - [x] All navigation and pages functional
 - [x] Demo user created for testing
+- [x] Logo size fixed in sidebar (compact 28px icon)
+- [x] Settings page fixed (added missing Toggle, TextInput, NumInput components and state variables)
 
 ## User Personas
 1. **Operations Manager** - Views dashboard, manages bookings, assigns drivers
