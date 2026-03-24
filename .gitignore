@@ -81,3 +81,7 @@ android-sdk/ castleadmin/node_modules/@next/swc-linux-arm64-gnu/next-swc.linux-a
 castleadmin/node_modules/@next/swc-linux-arm64-musl/next-swc.linux-arm64-musl.node
 castleadmin/node_modules/@next/swc-linux-arm64-gnu/next-swc.linux-arm64-gnu.node
 castleadmin/.next/cache/webpack/client-development/4.pack.gz
+-e 
+# Environment files
+*.env
+*.env.*
