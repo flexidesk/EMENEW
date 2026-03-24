@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Settings, Building2, Bell, Users, Plug, Save, RefreshCw, Car, AlertTriangle, Key, Globe, MapPin, ShoppingCart, CheckCircle, XCircle, Loader, Webhook, Copy, Trash2 } from 'lucide-react';
+import { Settings, Building2, Bell, Users, Plug, Save, RefreshCw, Car, AlertTriangle, Key, Globe, MapPin, ShoppingCart, CheckCircle, XCircle, Loader, Webhook, Copy, Trash2, Code } from 'lucide-react';
 import { toast } from 'sonner';
 
 
@@ -409,6 +409,28 @@ export default function SettingsContent() {
   // Integrations sub-tab
   const [integrationsSubTab, setIntegrationsSubTab] = useState<'connections' | 'api_keys' | 'webhooks'>('connections');
 
+  // WooCommerce testing/saving state
+  const [wcTesting, setWcTesting] = useState(false);
+  const [wcSaving, setWcSaving] = useState(false);
+
+  // Webhooks state
+  const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
+  const [showNewWebhookForm, setShowNewWebhookForm] = useState(false);
+  const [newWebhookForm, setNewWebhookForm] = useState<Omit<WebhookConfig, 'id'>>({
+    name: '',
+    url: '',
+    method: 'POST',
+    secret: '',
+    events: ['order.created'],
+    is_active: true,
+  });
+
+  // API Instructions toggle
+  const [showApiInstructions, setShowApiInstructions] = useState(false);
+
+  // Webhook Instructions toggle
+  const [showWebhookInstructions, setShowWebhookInstructions] = useState(false);
+
   // ─── Load Data ──────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -683,6 +705,123 @@ export default function SettingsContent() {
       toast.error(`Failed to save field mapping: ${msg}`);
     } finally {
       setWcFieldMappingSaving(false);
+    }
+  };
+
+  const testWcConnection = async () => {
+    if (!wcSettings.store_url || !wcSettings.consumer_key || !wcSettings.consumer_secret) {
+      toast.error('Please fill in all WooCommerce credentials first');
+      return;
+    }
+    setWcTesting(true);
+    try {
+      // Test the WooCommerce REST API connection
+      const testUrl = `${wcSettings.store_url.replace(/\/$/, '')}/wp-json/wc/v3/system_status`;
+      const auth = btoa(`${wcSettings.consumer_key}:${wcSettings.consumer_secret}`);
+      
+      const response = await fetch(testUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const storeName = data?.environment?.site_url || wcSettings.store_url;
+        
+        // Update settings with successful test
+        if (wcSettings.id) {
+          await supabase.from('woocommerce_settings').update({
+            is_connected: true,
+            last_test_status: 'success',
+            last_test_message: `Connected successfully to ${storeName}`,
+            last_tested_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', wcSettings.id);
+        }
+        
+        setWcSettings((s) => ({
+          ...s,
+          is_connected: true,
+          last_test_status: 'success',
+          last_test_message: `Connected successfully to ${storeName}`,
+          last_tested_at: new Date().toISOString(),
+        }));
+        toast.success('WooCommerce connection successful!');
+      } else {
+        const errorText = await response.text();
+        let errorMsg = 'Connection failed';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMsg = errorJson.message || errorJson.error || errorMsg;
+        } catch {
+          errorMsg = response.status === 401 ? 'Invalid credentials' : `HTTP ${response.status}`;
+        }
+        
+        if (wcSettings.id) {
+          await supabase.from('woocommerce_settings').update({
+            is_connected: false,
+            last_test_status: 'failed',
+            last_test_message: errorMsg,
+            last_tested_at: new Date().toISOString(),
+          }).eq('id', wcSettings.id);
+        }
+        
+        setWcSettings((s) => ({
+          ...s,
+          is_connected: false,
+          last_test_status: 'failed',
+          last_test_message: errorMsg,
+          last_tested_at: new Date().toISOString(),
+        }));
+        toast.error(`Connection failed: ${errorMsg}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setWcSettings((s) => ({
+        ...s,
+        is_connected: false,
+        last_test_status: 'failed',
+        last_test_message: `Network error: ${msg}`,
+        last_tested_at: new Date().toISOString(),
+      }));
+      toast.error(`Connection test failed: ${msg}`);
+    } finally {
+      setWcTesting(false);
+    }
+  };
+
+  const saveWcSettings = async () => {
+    if (!wcSettings.store_url) {
+      toast.error('Store URL is required');
+      return;
+    }
+    setWcSaving(true);
+    try {
+      const payload = {
+        store_url: wcSettings.store_url.replace(/\/$/, ''), // Remove trailing slash
+        consumer_key: wcSettings.consumer_key || null,
+        consumer_secret: wcSettings.consumer_secret || null,
+        is_connected: wcSettings.is_connected || false,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (wcSettings.id) {
+        const { error } = await supabase.from('woocommerce_settings').update(payload).eq('id', wcSettings.id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from('woocommerce_settings').insert(payload).select().single();
+        if (error) throw error;
+        if (data) setWcSettings((s) => ({ ...s, ...data }));
+      }
+      toast.success('WooCommerce credentials saved');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(`Failed to save credentials: ${msg}`);
+    } finally {
+      setWcSaving(false);
     }
   };
 
@@ -1539,9 +1678,104 @@ export default function SettingsContent() {
           {/* ── API Keys sub-tab ── */}
           {integrationsSubTab === 'api_keys' && (
             <div className="space-y-5">
+              {/* API Instructions */}
+              <div className="rounded-xl border p-5 space-y-4" style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg" style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}>
+                    <Code size={18} style={{ color: 'hsl(var(--primary))' }} />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold" style={{ color: 'hsl(var(--foreground))' }}>CastleAdmin API</h2>
+                    <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>Use API keys to integrate CastleAdmin with your systems</p>
+                  </div>
+                </div>
+
+                {/* API Endpoint Info */}
+                <div className="rounded-lg p-3 border" style={{ backgroundColor: 'hsl(var(--secondary))', borderColor: 'hsl(var(--border))' }}>
+                  <p className="text-xs font-medium mb-2" style={{ color: 'hsl(var(--foreground))' }}>Base API Endpoint</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono flex-1 break-all px-2 py-1 rounded" style={{ backgroundColor: 'hsl(var(--background))', color: 'hsl(var(--muted-foreground))' }}>
+                      {typeof window !== 'undefined' ? `${window.location.origin}/api/v1` : 'https://your-domain.com/api/v1'}
+                    </code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/api/v1`); toast.success('Copied!'); }}
+                      className="shrink-0 p-1.5 rounded border"
+                      style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
+                    >
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* API Usage Instructions */}
+                <div className="border rounded-lg overflow-hidden" style={{ borderColor: 'hsl(var(--border))' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowApiInstructions((v) => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-left transition-colors hover:bg-black/5"
+                    style={{ backgroundColor: 'hsl(var(--secondary))', color: 'hsl(var(--foreground))' }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-base">📖</span> API Usage Guide
+                    </span>
+                    <span className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>{showApiInstructions ? '▲ Hide' : '▼ Show'}</span>
+                  </button>
+                  {showApiInstructions && (
+                    <div className="px-4 py-4 space-y-4" style={{ backgroundColor: 'hsl(var(--card))' }}>
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'hsl(var(--foreground))' }}>Authentication</p>
+                        <p className="text-xs mb-2" style={{ color: 'hsl(var(--muted-foreground))' }}>Include your API key in the request header:</p>
+                        <pre className="text-xs font-mono p-3 rounded-lg overflow-x-auto" style={{ backgroundColor: 'hsl(var(--secondary))', color: 'hsl(var(--foreground))' }}>
+{`Authorization: Bearer YOUR_API_KEY
+X-API-Key: YOUR_API_KEY`}
+                        </pre>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'hsl(var(--foreground))' }}>Available Endpoints</p>
+                        <div className="space-y-2">
+                          {[
+                            { method: 'GET', path: '/orders', desc: 'List all orders', scope: 'read' },
+                            { method: 'POST', path: '/orders', desc: 'Create a new order', scope: 'write' },
+                            { method: 'GET', path: '/orders/:id', desc: 'Get order details', scope: 'read' },
+                            { method: 'PATCH', path: '/orders/:id', desc: 'Update an order', scope: 'write' },
+                            { method: 'GET', path: '/drivers', desc: 'List all drivers', scope: 'read' },
+                            { method: 'GET', path: '/drivers/:id/location', desc: 'Get driver location', scope: 'read' },
+                            { method: 'GET', path: '/customers', desc: 'List customers', scope: 'read' },
+                            { method: 'POST', path: '/webhooks/test', desc: 'Test webhook delivery', scope: 'admin' },
+                          ].map(({ method, path, desc, scope }) => (
+                            <div key={path + method} className="flex items-center gap-3 text-xs">
+                              <span className={`px-2 py-0.5 rounded font-mono font-bold ${method === 'GET' ? 'bg-green-100 text-green-700' : method === 'POST' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{method}</span>
+                              <code className="font-mono" style={{ color: 'hsl(var(--foreground))' }}>{path}</code>
+                              <span style={{ color: 'hsl(var(--muted-foreground))' }}>— {desc}</span>
+                              <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-gray-100 text-gray-500">{scope}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'hsl(var(--foreground))' }}>Example Request (cURL)</p>
+                        <pre className="text-xs font-mono p-3 rounded-lg overflow-x-auto" style={{ backgroundColor: 'hsl(var(--secondary))', color: 'hsl(var(--foreground))' }}>
+{`curl -X GET "${typeof window !== 'undefined' ? window.location.origin : 'https://your-domain.com'}/api/v1/orders" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json"`}
+                        </pre>
+                      </div>
+
+                      <div className="rounded-lg p-3" style={{ backgroundColor: 'hsl(var(--secondary))' }}>
+                        <p className="text-xs font-medium mb-1" style={{ color: 'hsl(var(--foreground))' }}>💡 Rate Limits</p>
+                        <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>API requests are limited to 100 requests per minute per API key. Rate limit headers are included in all responses.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* API Keys Management */}
               <div className="rounded-xl border p-5 space-y-4" style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
                 <div className="flex items-center justify-between">
-                  <h2 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'hsl(var(--foreground))' }}><Key size={15} style={{ color: 'hsl(var(--primary))' }} /> API Keys</h2>
+                  <h2 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'hsl(var(--foreground))' }}><Key size={15} style={{ color: 'hsl(var(--primary))' }} /> Your API Keys</h2>
                   <button onClick={() => setShowNewKeyForm((v) => !v)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: 'hsl(var(--primary))' }}>
                     <Key size={13} /> New Key
                   </button>
@@ -1602,13 +1836,91 @@ export default function SettingsContent() {
           {/* ── Webhooks sub-tab ── */}
           {integrationsSubTab === 'webhooks' && (
             <div className="space-y-4">
+              {/* Webhook Instructions */}
+              <div className="rounded-xl border p-5 space-y-4" style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg" style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}>
+                    <Webhook size={18} style={{ color: 'hsl(var(--primary))' }} />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold" style={{ color: 'hsl(var(--foreground))' }}>Webhook Integration</h2>
+                    <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>Receive and send real-time notifications when events occur</p>
+                  </div>
+                </div>
+
+                {/* Incoming webhook info */}
+                <div className="rounded-lg p-4 border" style={{ backgroundColor: 'hsl(var(--secondary))', borderColor: 'hsl(var(--border))' }}>
+                  <p className="text-xs font-semibold mb-2 flex items-center gap-2" style={{ color: 'hsl(var(--foreground))' }}>
+                    <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-bold">INCOMING</span>
+                    WooCommerce → CastleAdmin
+                  </p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <code className="text-xs font-mono flex-1 break-all px-2 py-1.5 rounded" style={{ backgroundColor: 'hsl(var(--background))', color: 'hsl(var(--foreground))' }}>
+                      POST {typeof window !== 'undefined' ? `${window.location.origin}/api/woocommerce/webhook` : 'https://your-domain.com/api/woocommerce/webhook'}
+                    </code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/api/woocommerce/webhook`); toast.success('Copied!'); }}
+                      className="shrink-0 p-1.5 rounded border"
+                      style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
+                    >
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                  <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>Supported topics: <code className="px-1 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'hsl(var(--background))' }}>order.created</code> · <code className="px-1 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'hsl(var(--background))' }}>order.updated</code> · <code className="px-1 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'hsl(var(--background))' }}>order.completed</code></p>
+                </div>
+
+                {/* Webhook Setup Instructions */}
+                <div className="border rounded-lg overflow-hidden" style={{ borderColor: 'hsl(var(--border))' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowWebhookInstructions((v) => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-left transition-colors hover:bg-black/5"
+                    style={{ backgroundColor: 'hsl(var(--secondary))', color: 'hsl(var(--foreground))' }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-base">📋</span> WooCommerce Webhook Setup
+                    </span>
+                    <span className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>{showWebhookInstructions ? '▲ Hide' : '▼ Show'}</span>
+                  </button>
+                  {showWebhookInstructions && (
+                    <div className="px-4 py-4 space-y-3" style={{ backgroundColor: 'hsl(var(--card))' }}>
+                      <p className="text-xs font-semibold" style={{ color: 'hsl(var(--foreground))' }}>Set up webhooks to automatically sync new orders from WooCommerce:</p>
+                      <ol className="space-y-2.5">
+                        {[
+                          { step: 1, title: 'Go to WooCommerce → Settings → Advanced → Webhooks', desc: 'In your WordPress admin panel, navigate to the webhooks section.' },
+                          { step: 2, title: 'Click "Add webhook"', desc: 'Create a new webhook for order synchronization.' },
+                          { step: 3, title: 'Configure the webhook', desc: 'Set Status to "Active", Topic to "Order created" or "Order updated".' },
+                          { step: 4, title: 'Set the Delivery URL', desc: `Copy and paste this URL: ${typeof window !== 'undefined' ? window.location.origin : 'https://your-domain.com'}/api/woocommerce/webhook` },
+                          { step: 5, title: 'Set Secret (recommended)', desc: 'Add a secret key for HMAC verification. Use a strong random string and save it securely.' },
+                          { step: 6, title: 'Save and test', desc: 'Click "Save webhook" then use the "Send a test request" button to verify the connection.' },
+                        ].map(({ step, title, desc }) => (
+                          <li key={step} className="flex gap-3">
+                            <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>{step}</span>
+                            <div>
+                              <p className="text-xs font-medium" style={{ color: 'hsl(var(--foreground))' }}>{title}</p>
+                              <p className="text-xs mt-0.5" style={{ color: 'hsl(var(--muted-foreground))' }}>{desc}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                      <div className="rounded-lg p-3 mt-2" style={{ backgroundColor: 'hsl(var(--secondary))' }}>
+                        <p className="text-xs font-medium mb-1" style={{ color: 'hsl(var(--foreground))' }}>💡 Pro Tip</p>
+                        <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>Create multiple webhooks for different events (order.created, order.updated, order.completed) to keep your CastleAdmin orders fully synchronized.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Outgoing Webhooks */}
               <div className="rounded-xl border p-5 space-y-4" style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'hsl(var(--foreground))' }}>
-                      <Webhook size={15} style={{ color: 'hsl(var(--primary))' }} /> Webhooks
+                      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-[10px] font-bold">OUTGOING</span>
+                      Send Events to External Services
                     </h2>
-                    <p className="text-xs mt-0.5" style={{ color: 'hsl(var(--muted-foreground))' }}>Send real-time HTTP requests to external URLs when events occur</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'hsl(var(--muted-foreground))' }}>Notify external systems when events occur in CastleAdmin</p>
                   </div>
                   <button
                     onClick={() => setShowNewWebhookForm((v) => !v)}
@@ -1617,24 +1929,6 @@ export default function SettingsContent() {
                   >
                     <Webhook size={13} /> Add Webhook
                   </button>
-                </div>
-
-                {/* Incoming webhook info */}
-                <div className="rounded-lg p-3 border" style={{ backgroundColor: 'hsl(var(--secondary))', borderColor: 'hsl(var(--border))' }}>
-                  <p className="text-xs font-medium mb-1" style={{ color: 'hsl(var(--foreground))' }}>Incoming Webhook Endpoint (WooCommerce → CastleAdmin)</p>
-                  <div className="flex items-center gap-2">
-                    <code className="text-xs font-mono flex-1 break-all" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                      POST https://castleadmi7836.builtwithrocket.new/api/woocommerce/webhook
-                    </code>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText('https://castleadmi7836.builtwithrocket.new/api/woocommerce/webhook'); toast.success('Copied!'); }}
-                      className="shrink-0 p-1.5 rounded border"
-                      style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-                    >
-                      <Copy size={12} />
-                    </button>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: 'hsl(var(--muted-foreground))' }}>Topics: Order created · Order updated · Order completed</p>
                 </div>
 
                 {/* New webhook form */}
