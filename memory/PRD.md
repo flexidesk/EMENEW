@@ -81,6 +81,12 @@ Build the provided CastleAdmin app - a comprehensive bouncy castle delivery mana
   - Reset Password form for existing credentials
   - Remove credentials functionality
   - Three API routes: /admin-api/admin/create-driver-user, reset-driver-password, remove-driver-user
+- [x] Driver portal order filters and sorting:
+  - Filter by date (date picker with Today/Tomorrow quick buttons)
+  - Filter by status (dropdown with all available statuses)
+  - Sort by date/time (newest first or oldest first)
+  - Filter pills showing active filters
+  - Clear filters functionality
 
 ## User Personas
 1. **Operations Manager** - Views dashboard, manages bookings, assigns drivers
