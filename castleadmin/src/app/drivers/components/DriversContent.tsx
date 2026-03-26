@@ -28,6 +28,7 @@ interface Driver {
   created_at: string;
   verification_status: VerificationStatus;
   access_code: string | null;
+  auth_user_id: string | null;
   license_number?: string | null;
   license_expiry?: string | null;
   license_class?: string | null;
@@ -194,13 +195,23 @@ export default function DriversContent() {
   const [showDocUpload, setShowDocUpload] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Credentials management state
+  const [showCredentialsForm, setShowCredentialsForm] = useState(false);
+  const [credentialsForm, setCredentialsForm] = useState({ email: '', password: '', confirmPassword: '' });
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
+
   // ─── Fetch Drivers ──────────────────────────────────────────────────────────
 
   const fetchDrivers = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('drivers')
-      .select('id, name, phone, email, vehicle, plate, status, avatar, is_active, is_archived, zone, created_at, verification_status, access_code')
+      .select('id, name, phone, email, vehicle, plate, status, avatar, is_active, is_archived, zone, created_at, verification_status, access_code, auth_user_id')
       .eq('is_archived', false)
       .order('name');
     if (error) {
@@ -422,6 +433,142 @@ export default function DriversContent() {
     const { error } = await supabase.from('driver_documents').delete().eq('id', docId);
     if (error) toast.error('Failed to delete document: ' + error.message);
     else { toast.success('Document removed'); fetchDocuments(); }
+  }
+
+  // ─── Driver Credentials Management ───────────────────────────────────────────
+
+  function generatePassword(length = 12): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
+
+  async function handleCreateCredentials() {
+    if (!selectedDriver) return;
+    
+    if (!credentialsForm.email.trim()) {
+      toast.error('Email is required');
+      return;
+    }
+    if (!credentialsForm.password || credentialsForm.password.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    if (credentialsForm.password !== credentialsForm.confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    setSavingCredentials(true);
+    try {
+      // Create auth user via Supabase Admin API (using service role key via API route)
+      const response = await fetch('/api/admin/create-driver-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: credentialsForm.email.trim(),
+          password: credentialsForm.password,
+          driverId: selectedDriver.id,
+          driverName: selectedDriver.name,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create credentials');
+      }
+
+      // Update driver record with email if different
+      if (selectedDriver.email !== credentialsForm.email.trim()) {
+        await supabase
+          .from('drivers')
+          .update({ email: credentialsForm.email.trim() })
+          .eq('id', selectedDriver.id);
+      }
+
+      toast.success(`Login credentials created for ${selectedDriver.name}`);
+      setShowCredentialsForm(false);
+      setCredentialsForm({ email: '', password: '', confirmPassword: '' });
+      fetchDrivers();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create credentials');
+    } finally {
+      setSavingCredentials(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!selectedDriver || !selectedDriver.auth_user_id) return;
+    
+    if (!newPassword || newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      const response = await fetch('/api/admin/reset-driver-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authUserId: selectedDriver.auth_user_id,
+          newPassword: newPassword,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to reset password');
+      }
+
+      toast.success(`Password reset for ${selectedDriver.name}`);
+      setShowResetPassword(false);
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reset password');
+    } finally {
+      setResettingPassword(false);
+    }
+  }
+
+  async function handleRemoveCredentials() {
+    if (!selectedDriver || !selectedDriver.auth_user_id) return;
+    
+    if (!confirm(`Are you sure you want to remove login credentials for ${selectedDriver.name}? They will no longer be able to access the driver portal.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/remove-driver-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authUserId: selectedDriver.auth_user_id,
+          driverId: selectedDriver.id,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to remove credentials');
+      }
+
+      toast.success(`Login credentials removed for ${selectedDriver.name}`);
+      fetchDrivers();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to remove credentials');
+    }
   }
 
   // ─── Stats ───────────────────────────────────────────────────────────────────
@@ -917,24 +1064,238 @@ export default function DriversContent() {
                       </div>
                     )}
 
-                    {/* Access Code */}
-                    {selectedDriver.access_code && (
-                      <div className="mt-6">
-                        <SectionHeader title="Portal Access" />
+                    {/* Portal Access / Login Credentials */}
+                    <div className="mt-6">
+                      <SectionHeader title="Portal Login Credentials" />
+                      {selectedDriver.auth_user_id ? (
+                        <div className="space-y-3">
+                          <div
+                            className="flex items-center gap-3 p-4 rounded-xl border"
+                            style={{ backgroundColor: 'hsl(var(--secondary))', borderColor: 'hsl(var(--border))' }}
+                          >
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-green-100">
+                              <ShieldCheck size={20} className="text-green-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium" style={{ color: 'hsl(var(--foreground))' }}>Login Enabled</p>
+                              <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                                {selectedDriver.email || 'Email not set'}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setShowResetPassword(true)}
+                                className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-secondary"
+                                style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                              >
+                                Reset Password
+                              </button>
+                              <button
+                                onClick={handleRemoveCredentials}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 transition-colors hover:bg-red-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Reset Password Form */}
+                          {showResetPassword && (
+                            <div
+                              className="p-4 rounded-xl border space-y-3"
+                              style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
+                            >
+                              <p className="text-sm font-medium" style={{ color: 'hsl(var(--foreground))' }}>Reset Password</p>
+                              <div className="space-y-2">
+                                <div className="relative">
+                                  <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    placeholder="New password (min 8 characters)"
+                                    className="w-full px-3 py-2 pr-20 text-sm rounded-lg border outline-none"
+                                    style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                  />
+                                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => { const p = generatePassword(); setNewPassword(p); setConfirmNewPassword(p); }}
+                                      className="text-xs px-2 py-0.5 rounded"
+                                      style={{ color: 'hsl(var(--primary))' }}
+                                    >
+                                      Generate
+                                    </button>
+                                  </div>
+                                </div>
+                                <input
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={confirmNewPassword}
+                                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                  placeholder="Confirm new password"
+                                  className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
+                                  style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                />
+                                <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                                  <input type="checkbox" checked={showPassword} onChange={(e) => setShowPassword(e.target.checked)} />
+                                  Show password
+                                </label>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleResetPassword}
+                                  disabled={resettingPassword}
+                                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                                  style={{ backgroundColor: 'hsl(var(--primary))' }}
+                                >
+                                  {resettingPassword ? <Loader2 size={14} className="animate-spin" /> : null}
+                                  Reset Password
+                                </button>
+                                <button
+                                  onClick={() => { setShowResetPassword(false); setNewPassword(''); setConfirmNewPassword(''); }}
+                                  className="px-4 py-2 rounded-lg border text-sm transition-colors hover:bg-secondary"
+                                  style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div
+                            className="flex items-center gap-3 p-4 rounded-xl border"
+                            style={{ backgroundColor: 'hsl(var(--secondary))', borderColor: 'hsl(var(--border))' }}
+                          >
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-100">
+                              <ShieldOff size={20} className="text-gray-400" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium" style={{ color: 'hsl(var(--foreground))' }}>No Login Credentials</p>
+                              <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                                This driver cannot access the driver portal yet
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setCredentialsForm({ 
+                                  email: selectedDriver.email || '', 
+                                  password: generatePassword(), 
+                                  confirmPassword: '' 
+                                });
+                                setShowCredentialsForm(true);
+                              }}
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-90"
+                              style={{ backgroundColor: 'hsl(var(--primary))' }}
+                            >
+                              <Plus size={14} />
+                              Create Login
+                            </button>
+                          </div>
+
+                          {/* Create Credentials Form */}
+                          {showCredentialsForm && (
+                            <div
+                              className="p-4 rounded-xl border space-y-4"
+                              style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
+                            >
+                              <p className="text-sm font-semibold" style={{ color: 'hsl(var(--foreground))' }}>Create Driver Portal Login</p>
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="text-xs font-medium block mb-1" style={{ color: 'hsl(var(--muted-foreground))' }}>Email Address *</label>
+                                  <input
+                                    type="email"
+                                    value={credentialsForm.email}
+                                    onChange={(e) => setCredentialsForm(f => ({ ...f, email: e.target.value }))}
+                                    placeholder="driver@example.com"
+                                    className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
+                                    style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium block mb-1" style={{ color: 'hsl(var(--muted-foreground))' }}>Password *</label>
+                                  <div className="relative">
+                                    <input
+                                      type={showPassword ? 'text' : 'password'}
+                                      value={credentialsForm.password}
+                                      onChange={(e) => setCredentialsForm(f => ({ ...f, password: e.target.value }))}
+                                      placeholder="Min 8 characters"
+                                      className="w-full px-3 py-2 pr-24 text-sm rounded-lg border outline-none"
+                                      style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const p = generatePassword();
+                                        setCredentialsForm(f => ({ ...f, password: p, confirmPassword: p }));
+                                      }}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-0.5 rounded"
+                                      style={{ color: 'hsl(var(--primary))' }}
+                                    >
+                                      Generate
+                                    </button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium block mb-1" style={{ color: 'hsl(var(--muted-foreground))' }}>Confirm Password *</label>
+                                  <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={credentialsForm.confirmPassword}
+                                    onChange={(e) => setCredentialsForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                                    placeholder="Confirm password"
+                                    className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
+                                    style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                  />
+                                </div>
+                                <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                                  <input type="checkbox" checked={showPassword} onChange={(e) => setShowPassword(e.target.checked)} />
+                                  Show password
+                                </label>
+                              </div>
+                              <div className="rounded-lg p-3" style={{ backgroundColor: 'hsl(var(--secondary))' }}>
+                                <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                                  <strong>Note:</strong> Share these credentials with the driver securely. They will use this email and password to log into the Driver Portal at <code className="px-1 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'hsl(var(--background))' }}>/driver-portal/login</code>
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleCreateCredentials}
+                                  disabled={savingCredentials}
+                                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                                  style={{ backgroundColor: 'hsl(var(--primary))' }}
+                                >
+                                  {savingCredentials ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                                  Create Credentials
+                                </button>
+                                <button
+                                  onClick={() => { setShowCredentialsForm(false); setCredentialsForm({ email: '', password: '', confirmPassword: '' }); }}
+                                  className="px-4 py-2 rounded-lg border text-sm transition-colors hover:bg-secondary"
+                                  style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Legacy Access Code (if exists) */}
+                      {selectedDriver.access_code && (
                         <div
-                          className="flex items-center gap-3 p-3 rounded-xl border"
-                          style={{ backgroundColor: 'hsl(var(--secondary))', borderColor: 'hsl(var(--border))' }}
+                          className="flex items-center gap-3 p-3 rounded-xl border mt-3"
+                          style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }}
                         >
                           <Hash size={14} style={{ color: 'hsl(var(--muted-foreground))' }} />
                           <div>
-                            <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>Driver Portal Access Code</p>
+                            <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>Legacy Access Code</p>
                             <p className="text-sm font-mono font-semibold tracking-widest" style={{ color: 'hsl(var(--foreground))' }}>
                               {selectedDriver.access_code}
                             </p>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
