@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { mapDbOrderToApp, AppOrder, AppDriver } from '@/lib/services/ordersService';
 import { toast } from 'sonner';
-import { Truck, Package, CheckCircle2, Clock, MapPin, Phone, RefreshCw, Loader2, ChevronDown, Navigation, AlertCircle, Calendar, User, ArrowRight, PoundSterling, TrendingUp, Star, LogOut, Wifi, WifiOff, Shield, Timer, ClipboardList, X, Mail, Lock, Eye, EyeOff, Settings, Save } from 'lucide-react';
+import { Truck, Package, CheckCircle2, Clock, MapPin, Phone, RefreshCw, Loader2, ChevronDown, Navigation, AlertCircle, Calendar, User, ArrowRight, PoundSterling, TrendingUp, Star, LogOut, Wifi, WifiOff, Shield, Timer, ClipboardList, X, Mail, Lock, Eye, EyeOff, Settings, Save, Filter, ArrowUpDown } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import AppLogo from '@/components/ui/AppLogo';
 import dynamic from 'next/dynamic';
@@ -955,6 +955,12 @@ function DriverDashboard({ driver: initialDriver, onLogout }: DashboardProps) {
   const [isOnline, setIsOnline] = useState(true);
   const [shiftRefreshKey, setShiftRefreshKey] = useState(0);
 
+  // Filter and sort states
+  const [dateFilter, setDateFilter] = useState<string>(''); // YYYY-MM-DD format
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [showFilters, setShowFilters] = useState(false);
+
   const supabase = createClient();
 
   // Online/offline detection
@@ -1149,7 +1155,66 @@ function DriverDashboard({ driver: initialDriver, onLogout }: DashboardProps) {
 
   const today = getTodayStr();
   const todayOrders = allOrders.filter((o) => o.bookingDate === today);
-  const displayOrders = activeTab === 'today' ? todayOrders : allOrders;
+
+  // Get unique statuses for filter dropdown
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set(allOrders.map(o => o.status));
+    return Array.from(statuses);
+  }, [allOrders]);
+
+  // Apply filters and sorting
+  const filteredAndSortedOrders = useMemo(() => {
+    let result = activeTab === 'today' ? [...todayOrders] : [...allOrders];
+
+    // Apply date filter
+    if (dateFilter) {
+      result = result.filter(o => {
+        const orderDate = new Date(o.bookingDate).toISOString().split('T')[0];
+        return orderDate === dateFilter;
+      });
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(o => o.status === statusFilter);
+    }
+
+    // Apply sorting by date and time
+    result.sort((a, b) => {
+      const dateA = new Date(a.bookingDate).getTime();
+      const dateB = new Date(b.bookingDate).getTime();
+      
+      // Parse delivery window times for secondary sort (e.g., "09:00 - 11:00")
+      const getWindowStart = (window: string) => {
+        const match = window?.match(/(\d{2}):(\d{2})/);
+        return match ? parseInt(match[1]) * 60 + parseInt(match[2]) : 0;
+      };
+      
+      const timeA = getWindowStart(a.deliveryWindow);
+      const timeB = getWindowStart(b.deliveryWindow);
+
+      if (sortOrder === 'newest') {
+        // Primary: newest date first, Secondary: earliest time first
+        if (dateB !== dateA) return dateB - dateA;
+        return timeA - timeB;
+      } else {
+        // Primary: oldest date first, Secondary: earliest time first  
+        if (dateA !== dateB) return dateA - dateB;
+        return timeA - timeB;
+      }
+    });
+
+    return result;
+  }, [allOrders, todayOrders, activeTab, dateFilter, statusFilter, sortOrder]);
+
+  // Check if any filters are active
+  const hasActiveFilters = dateFilter || statusFilter !== 'all';
+
+  const clearAllFilters = () => {
+    setDateFilter('');
+    setStatusFilter('all');
+  };
+
   const todayActive = todayOrders.filter(
     (o) => o.status !== 'Booking Complete' && o.status !== 'Booking Cancelled'
   ).length;
@@ -1383,8 +1448,8 @@ function DriverDashboard({ driver: initialDriver, onLogout }: DashboardProps) {
         {/* ── ORDERS SECTION ── */}
         {activeSection === 'orders' && (
           <div className="space-y-3">
-            {/* Sub-tab + Refresh */}
-            <div className="flex items-center justify-between">
+            {/* Tabs + Filter + Sort Row */}
+            <div className="flex items-center justify-between gap-2">
               <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: 'hsl(var(--secondary))' }}>
                 {(['today', 'all'] as const).map((tab) => (
                   <button
@@ -1400,18 +1465,166 @@ function DriverDashboard({ driver: initialDriver, onLogout }: DashboardProps) {
                   </button>
                 ))}
               </div>
-              <button
-                onClick={loadData}
-                disabled={loading}
-                className="p-2 rounded-lg transition-colors hover:bg-secondary"
-                title="Refresh"
+              <div className="flex items-center gap-1.5">
+                {/* Filter Button */}
+                <button
+                  onClick={() => setShowFilters(v => !v)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${hasActiveFilters ? 'ring-2 ring-primary/30' : ''}`}
+                  style={{ 
+                    backgroundColor: showFilters || hasActiveFilters ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--secondary))',
+                    color: showFilters || hasActiveFilters ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'
+                  }}
+                  title="Toggle filters"
+                >
+                  <Filter size={12} />
+                  {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
+                </button>
+
+                {/* Sort Button */}
+                <button
+                  onClick={() => setSortOrder(s => s === 'newest' ? 'oldest' : 'newest')}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                  style={{ backgroundColor: 'hsl(var(--secondary))', color: 'hsl(var(--muted-foreground))' }}
+                  title={`Sort: ${sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}`}
+                >
+                  <ArrowUpDown size={12} />
+                </button>
+
+                {/* Refresh Button */}
+                <button
+                  onClick={loadData}
+                  disabled={loading}
+                  className="p-1.5 rounded-lg transition-colors hover:bg-secondary"
+                  title="Refresh"
+                >
+                  <RefreshCw
+                    size={14}
+                    className={loading ? 'animate-spin' : ''}
+                    style={{ color: 'hsl(var(--muted-foreground))' }}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Expanded Filters Panel */}
+            {showFilters && (
+              <div 
+                className="rounded-xl border p-3 space-y-3"
+                style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
               >
-                <RefreshCw
-                  size={14}
-                  className={loading ? 'animate-spin' : ''}
-                  style={{ color: 'hsl(var(--muted-foreground))' }}
-                />
-              </button>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold" style={{ color: 'hsl(var(--foreground))' }}>Filter Orders</p>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearAllFilters}
+                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded transition-colors"
+                      style={{ color: 'hsl(var(--primary))' }}
+                    >
+                      <X size={10} />
+                      Clear
+                    </button>
+                  )}
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Date Filter */}
+                  <div>
+                    <label className="text-[10px] font-medium block mb-1" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFilter}
+                      onChange={(e) => setDateFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border text-xs outline-none"
+                      style={{ 
+                        backgroundColor: 'hsl(var(--background))', 
+                        borderColor: dateFilter ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+                        color: 'hsl(var(--foreground))'
+                      }}
+                    />
+                  </div>
+
+                  {/* Status Filter */}
+                  <div>
+                    <label className="text-[10px] font-medium block mb-1" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                      Status
+                    </label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border text-xs outline-none appearance-none cursor-pointer"
+                      style={{ 
+                        backgroundColor: 'hsl(var(--background))', 
+                        borderColor: statusFilter !== 'all' ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+                        color: 'hsl(var(--foreground))'
+                      }}
+                    >
+                      <option value="all">All Statuses</option>
+                      {uniqueStatuses.map(status => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quick Date Buttons */}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'Today', getValue: () => getTodayStr() },
+                    { label: 'Tomorrow', getValue: () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; } },
+                    { label: 'Clear', getValue: () => '' },
+                  ].map(({ label, getValue }) => (
+                    <button
+                      key={label}
+                      onClick={() => setDateFilter(getValue())}
+                      className="text-[10px] px-2 py-1 rounded-full transition-colors"
+                      style={{ 
+                        backgroundColor: 'hsl(var(--secondary))', 
+                        color: 'hsl(var(--muted-foreground))'
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Active Filters Pills */}
+            {hasActiveFilters && !showFilters && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {dateFilter && (
+                  <span 
+                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: 'hsl(var(--primary) / 0.1)', color: 'hsl(var(--primary))' }}
+                  >
+                    <Calendar size={9} />
+                    {new Date(dateFilter).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                    <button onClick={() => setDateFilter('')} className="hover:opacity-70"><X size={9} /></button>
+                  </span>
+                )}
+                {statusFilter !== 'all' && (
+                  <span 
+                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: 'hsl(var(--primary) / 0.1)', color: 'hsl(var(--primary))' }}
+                  >
+                    {statusFilter.replace('Booking ', '')}
+                    <button onClick={() => setStatusFilter('all')} className="hover:opacity-70"><X size={9} /></button>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Sort indicator */}
+            <div className="flex items-center justify-between">
+              <p className="text-[10px]" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                {filteredAndSortedOrders.length} order{filteredAndSortedOrders.length !== 1 ? 's' : ''}
+                {hasActiveFilters && ` (filtered)`}
+              </p>
+              <p className="text-[10px]" style={{ color: 'hsl(var(--muted-foreground))' }}>
+                Sorted: {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
+              </p>
             </div>
 
             {loading ? (
@@ -1428,21 +1641,34 @@ function DriverDashboard({ driver: initialDriver, onLogout }: DashboardProps) {
                   </div>
                 ))}
               </div>
-            ) : displayOrders.length === 0 ? (
+            ) : filteredAndSortedOrders.length === 0 ? (
               <div
                 className="rounded-xl border p-10 text-center"
                 style={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
               >
                 <Package size={36} className="mx-auto mb-3" style={{ color: 'hsl(var(--muted-foreground))' }} />
                 <p className="font-semibold text-sm" style={{ color: 'hsl(var(--foreground))' }}>
-                  {activeTab === 'today' ? 'No deliveries today' : 'No orders assigned'}
+                  {hasActiveFilters 
+                    ? 'No orders match filters'
+                    : activeTab === 'today' ? 'No deliveries today' : 'No orders assigned'}
                 </p>
                 <p className="text-xs mt-1" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  Check back later or view all orders.
+                  {hasActiveFilters 
+                    ? 'Try adjusting your filters.'
+                    : 'Check back later or view all orders.'}
                 </p>
+                {hasActiveFilters && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="mt-3 text-xs px-3 py-1.5 rounded-lg text-white"
+                    style={{ backgroundColor: 'hsl(var(--primary))' }}
+                  >
+                    Clear Filters
+                  </button>
+                )}
               </div>
             ) : (
-              displayOrders.map((order) => {
+              filteredAndSortedOrders.map((order) => {
                 const nextStatusLabel = NEXT_STATUS_LABEL[order.status];
                 const isComplete = order.status === 'Booking Complete';
                 const isCancelled = order.status === 'Booking Cancelled';
@@ -1795,7 +2021,7 @@ function DriverDashboard({ driver: initialDriver, onLogout }: DashboardProps) {
               </button>
             </div>
             <DriverRouteMap
-              orders={activeTab === 'today' ? todayOrders : allOrders}
+              orders={filteredAndSortedOrders}
               driverName={driver.name}
             />
           </div>
