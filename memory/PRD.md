@@ -75,6 +75,12 @@ Build the provided CastleAdmin app - a comprehensive bouncy castle delivery mana
   - Connections: WooCommerce integration with credentials, Setup Instructions, Field Mapping
   - API Keys: CastleAdmin API documentation, usage guide, key management
   - Webhooks: Incoming endpoint, setup instructions, outgoing webhook configuration
+- [x] Driver credentials management in admin dashboard:
+  - Portal Login Credentials section in driver profile
+  - Create Login form with email/password/generate
+  - Reset Password form for existing credentials
+  - Remove credentials functionality
+  - Three API routes: /admin-api/admin/create-driver-user, reset-driver-password, remove-driver-user
 
 ## User Personas
 1. **Operations Manager** - Views dashboard, manages bookings, assigns drivers
