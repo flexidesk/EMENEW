@@ -465,7 +465,7 @@ export default function DriversContent() {
     setSavingCredentials(true);
     try {
       // Create auth user via Supabase Admin API (using service role key via API route)
-      const response = await fetch('/api/admin/create-driver-user', {
+      const response = await fetch('/admin-api/admin/create-driver-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -515,7 +515,7 @@ export default function DriversContent() {
 
     setResettingPassword(true);
     try {
-      const response = await fetch('/api/admin/reset-driver-password', {
+      const response = await fetch('/admin-api/admin/reset-driver-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -549,7 +549,7 @@ export default function DriversContent() {
     }
 
     try {
-      const response = await fetch('/api/admin/remove-driver-user', {
+      const response = await fetch('/admin-api/admin/remove-driver-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

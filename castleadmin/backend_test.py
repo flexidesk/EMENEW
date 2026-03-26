@@ -32,8 +32,8 @@ class DriverCredentialsAPITester:
         })
 
     def test_create_driver_user_endpoint(self):
-        """Test /api/admin/create-driver-user endpoint"""
-        url = f"{self.base_url}/api/admin/create-driver-user"
+        """Test /admin-api/admin/create-driver-user endpoint"""
+        url = f"{self.base_url}/admin-api/admin/create-driver-user"
         
         # Test 1: Missing required fields
         try:
@@ -65,8 +65,8 @@ class DriverCredentialsAPITester:
             self.log_test("Create Driver User - Endpoint exists", False, str(e))
 
     def test_reset_driver_password_endpoint(self):
-        """Test /api/admin/reset-driver-password endpoint"""
-        url = f"{self.base_url}/api/admin/reset-driver-password"
+        """Test /admin-api/admin/reset-driver-password endpoint"""
+        url = f"{self.base_url}/admin-api/admin/reset-driver-password"
         
         # Test 1: Missing required fields
         try:
@@ -109,8 +109,8 @@ class DriverCredentialsAPITester:
             self.log_test("Reset Driver Password - Endpoint exists", False, str(e))
 
     def test_remove_driver_user_endpoint(self):
-        """Test /api/admin/remove-driver-user endpoint"""
-        url = f"{self.base_url}/api/admin/remove-driver-user"
+        """Test /admin-api/admin/remove-driver-user endpoint"""
+        url = f"{self.base_url}/admin-api/admin/remove-driver-user"
         
         # Test 1: Missing required fields
         try:
@@ -141,9 +141,9 @@ class DriverCredentialsAPITester:
     def test_endpoint_accessibility(self):
         """Test that all endpoints are accessible (not 404)"""
         endpoints = [
-            "/api/admin/create-driver-user",
-            "/api/admin/reset-driver-password", 
-            "/api/admin/remove-driver-user"
+            "/admin-api/admin/create-driver-user",
+            "/admin-api/admin/reset-driver-password", 
+            "/admin-api/admin/remove-driver-user"
         ]
         
         for endpoint in endpoints:

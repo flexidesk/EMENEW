@@ -121,6 +121,12 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/reset-password') ||
     pathname.startsWith('/track') ||
     pathname.startsWith('/auth');
+  const isAdminApiRoute = pathname.startsWith('/admin-api');
+
+  // API routes should not be redirected - they handle their own auth
+  if (isAdminApiRoute) {
+    return NextResponse.next({ request });
+  }
 
   // Fully public pages that never need auth checking
   if (isPublicPage) {
