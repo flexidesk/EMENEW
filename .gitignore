@@ -85,3 +85,7 @@ castleadmin/.next/cache/webpack/client-development/4.pack.gz
 # Environment files
 *.env
 *.env.*
+-e 
+# Environment files
+*.env
+*.env.*
